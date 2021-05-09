@@ -203,7 +203,7 @@ def filter_mail_from(parts):
 	opaque = parts[6]
 	sender = parts[7].strip()
 	if not len(sender):
-		result = f"filter-result|{id}|{opaque}|reject|554 transaction has failed"
+		result = f"filter-result|{id}|{opaque}|reject|554 empty sender"
 		flog(f'- sender: <empty>')
 	else:
 		result = f"filter-result|{id}|{opaque}|proceed"
@@ -286,6 +286,7 @@ if __name__ == '__main__':
 		delete_indec()
 		flog(f'indexes deleted')
 		exit(0)
+
 	if "-v" in opts:
 		verbose = True
 
