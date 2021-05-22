@@ -62,30 +62,40 @@ if __name__ == '__main__':
 	PORT = 25
 	tot_bytes = 0
 
+	# HOST = '173.194.73.27'
+
 	with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 		print(f'connecting ...')
 		s.connect((HOST, PORT))
 		s.sendall(b'EHLO anal\r\n')
 
 		data = s.recv(1024)
-		print(f'{data.decode("utf8")}')
-		s.sendall(b'MAIL FROM:<kilitary@gmail.com> SIZE=1\r\n')
+		print(f'{data.decode("utf8").strip()}')
+		s.sendall(b'MAIL FROM:<comm@gmail.com> SIZE=1\r\n')
 		data = s.recv(1024)
-		print(f'{data.decode("utf8")}')
-		s.sendall(b'RCPT TO: <kilitary@kilitary.ru>\r\n')
+		print(f'{data.decode("utf8").strip()}')
+		s.sendall(b'RCPT TO: <kilitary@gmail.com>\r\n')
 		data = s.recv(1024)
-		print(f'{data.decode("utf8")}')
+		print(f'{data.decode("utf8").strip()}')
 		s.sendall(b'DATA\r\n')
 		data = s.recv(1024)
-		print(f'{data.decode("utf8")}')
+		print(f'{data.decode("utf8").strip()}')
 		s.setblocking(True)
+		log_time = sec_bytes = 0
+
 		while True:
-			content = b'\r\n' + (b'A' * secrets.choice(range(1, 15))) + str.encode(Randomer.str_str_generator(size=11)) + b"\r\n"
+			content = b'\r\n' + (b'A' * secrets.choice(range(1, 15))) + str.encode(Randomer.str_str_generator(size=44)) + b"\r\n"
 			try:
-				s.sendall(content)
+				sent = s.send(content)
 			except Exception as e:
 				print(f'exp: {e}')
+				exit(0)
 
-			tot_bytes += len(content)
+			tot_bytes += sent
 
-			print(f'\r{tot_bytes / 1024.0 / 1024.0:.2f}MB ', end='')
+			if time.time() - log_time >= 1:
+				print(f'\r{tot_bytes} ({tot_bytes / 1024.0 / 1024.0:.1f}MB) sent={sent} speed={sec_bytes / 1024.0 / 1024.0:.1f}MB/s', end='')
+				sec_bytes = 0
+				log_time = time.time()
+			else:
+				sec_bytes += sent

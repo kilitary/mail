@@ -260,7 +260,7 @@ def filter_disconnect(parts):
 	mail_log = [l.decode("utf-8") for l in mail_log]
 	log = "\r\n".join(mail_log)
 
-	if len(mail_log) >= 1:
+	if len(mail_log) >= 1 and len(message_lines) >= 1:
 		store_mail_log(messages=log)
 
 	clear_flags()
@@ -302,6 +302,7 @@ if __name__ == '__main__':
 
 			last_check = time.time()
 			bytes_in = 0
+			prev_bytes_in = 0
 
 			while sys.stdin.readable():
 				line = sys.stdin.readline().rstrip()
@@ -315,9 +316,9 @@ if __name__ == '__main__':
 				bytes_in += len(line)
 
 				if bytes_in >= MAX_BYTES_IN and not resetting_connection:
-					flog(f'! too big message ({bytes_in / 1024.0 / 1024.0:.1f}mb received), dropping connection.')
+					flog(f'\r\n! too big message ({bytes_in / 1024.0 / 1024.0:.1f}mb received), dropping connection.')
 					flog(f'! terminating connection with {ip} ...')
-					ret = subprocess.call(f'/usr/local/bin/python3 /home/projects/tcpdetach.py {ip}', shell=True)
+					ret = subprocess.call(f'/usr/local/bin/python3 /home/projects/pyths/tcpdetach.py {ip}', shell=True)
 					flog(f'! terminate: {ret}')
 					resetting_connection = True
 					continue
@@ -327,9 +328,10 @@ if __name__ == '__main__':
 
 				elif event == 'data-line':
 					if time.time() - last_check >= 1.0:
-						flog(f'{bytes_in / 1024.0:.1f}k', end='')
+						flog(f' {bytes_in / 1024.0:.1f}k ', end='')
 						last_check = time.time()
-					else:
+					if bytes_in - prev_bytes_in >= 1024 * 1024 * 1:
+						prev_bytes_in = bytes_in
 						flog(f'.', end='')
 				else:
 					flog(f'! lost connection to mta')
