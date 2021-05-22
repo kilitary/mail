@@ -89,7 +89,7 @@ if __name__ == '__main__':
 		},
 		"meta": {
 			"from"      : sys.argv[1],
-			"to"        : sys.argv[2],
+			'to'        : sys.argv[2],
 			"created_at": time.time(),
 			"check-pid" : os.getpid(),
 			"check-id"  : cid
