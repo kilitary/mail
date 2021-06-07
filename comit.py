@@ -16,7 +16,7 @@ import subprocess
 import locale
 import atexit
 from elasticsearch import Elasticsearch
-from var_dump import var_dump
+from var_dump import var_dump, var_export
 import secrets
 import random
 import re
@@ -39,6 +39,8 @@ bytes_in = 0
 es = {}
 elapsed = 0
 connection_id = None
+version = "commit-0.1a"
+subject = ''
 
 class Randomer(object):
 	def __init__(self):
@@ -88,6 +90,8 @@ def flog(msg, end='\r\n'):
 		file.write(f'{msg}' + end)
 
 def store_mail(mta_id=None, rcpt=None, sender=None, message=None):
+	global subject
+
 	if r.get(f'{mta_id}_done') == 1:
 		flog(f'already stored')
 		return
@@ -105,6 +109,7 @@ def store_mail(mta_id=None, rcpt=None, sender=None, message=None):
 			'timestamp_ns': time.time_ns(),
 			"created_at"  : dt,
 			"check-pid"   : os.getpid(),
+			"subject"     : subject,
 			"check-id"    : cid,
 			'size_b'      : len(message),
 			"mta-id"      : mta_id,
@@ -144,6 +149,7 @@ def store_mail_log(messages=None):
 	flog(f'√ mail log {res}')
 
 def filter_dataline(parts):
+	global subject
 	id = parts[5]
 	opaque = parts[6]
 	newline = parts[7]
@@ -153,6 +159,19 @@ def filter_dataline(parts):
 		pipe = r.pipeline()
 		pipe.rpush(f'{id}_message', newline)
 		pipe.expire(f'{id}_message', 1000)
+
+		if not len(subject):
+			flog(f'scaning [{newline}')
+			match = re.match(r'^Subject:\s+(.*?)$', newline, re.IGNORECASE | re.UNICODE)
+			flog(f'1:{var_export(newline)}')
+			flog(f'1:{var_export(match)}')
+			if match:
+				# exit(9)
+				#subject = match[1]
+				pass
+			else:
+				subject = '#empty#'
+
 		pipe.execute()
 
 	# flog(f'< {result} ({id})')
@@ -278,6 +297,8 @@ def atexit_handler():
 if __name__ == '__main__':
 	atexit.register(atexit_handler)
 
+	flog(f'version {version}')
+
 	es = Elasticsearch([host])
 	r = redis.Redis(host='127.0.0.1', port=6379, db=0)
 
@@ -303,6 +324,7 @@ if __name__ == '__main__':
 			last_check = time.time()
 			bytes_in = 0
 			prev_bytes_in = 0
+			subject = ''
 
 			while sys.stdin.readable():
 				line = sys.stdin.readline().rstrip()
