@@ -108,37 +108,62 @@ if __name__ == '__main__':
 	if os.path.exists(log_file):
 		os.unlink(log_file)
 
+	url = 'edition.cnn.com'
+	domains = {}
 	while True:
-		data = requests.get(f'https://{HOST}').text
+		print(f'refreshing via {url} ...', end='')
+		try:
+			data = requests.get(f'https://{url}').text
+		except Exception as e:
+			print(f'\r[ ! ] [{url}] exception HTTP={e}')
+			url = domains[random.randint(0, len(domains) - 1)]
+			print(f'next safe domain: {url}')
+			continue
+
 		# flog(f'{data}')
+
 		matches = re.findall(r"//(.*?\.[^ /\",:\?]*)", data, flags=re.RegexFlag.S | re.RegexFlag.M)
+		print(f' {len(data)} bytes, {len(matches)} domains\r')
 		flog(f'ret: {matches}', fprint=True)
-		domains = {}
+
 		for match in matches:
 			if domains.get(match) is None:
 				domains[match] = 1
 			else:
 				domains[match] += 1
+			print(f'+{match} ', end='')
+
+		if len(matches):
+			print(f'\n')
 
 		def take_random(elem):
 			return random.randint(0, 1)
 
-		domains = sorted(domains, key=take_random)
+		domains_a = sorted(domains, key=take_random)
 
-		for domain in domains:
+		for domain in domains_a:
+			url = domains_a[random.randint(0, len(domains_a) - 1)]
+
 			id = None
-			print(f'\rconnecting to {domain} ...', end='')
+			print(f'\r[ ? ] connecting to {domain} ...', end='')
 			domain = re.sub(r'([^.0-9a-zA-Z])', '', domain)
 
-			if 'cnn' not in domain:
-				continue
+			# if 'cnn' not in domain:
+			# 	continue
 
 			start = time.perf_counter_ns()
 			try:
 				try:
 					data = requests.get(f'https://{domain}/', timeout=10)
+				except requests.exceptions.SSLError as e:
+					print(f'\r[ % ] "{domain})" ssl fail')
+					continue
+				except requests.exceptions.ConnectionError as e:
+					print(f'"\r[ ! ] "{domain}" - dns fail')
+					continue
 				except Exception as e:
-					print(f'exception HTTP={e}')
+					type, value, traceback = sys.exc_info()
+					print(f'\r[ ! ] "{domain}" exception {type} HTTP={e}')
 					continue
 
 				content = data.text
@@ -172,6 +197,7 @@ if __name__ == '__main__':
 				# content = connection.escape_string(content) if content else ''
 				# content = "%s" % sqlescape(content)
 				content = MySQLdb.escape_string(content)
+				content = re.sub(r'([^\x21-\x7e]*)', '', str(content))
 				# content = sqlescape(content)
 				# content = re.sub(r'([^a-z0-9 \[\]~!@#\$%\^&\*\(\)<>\'"\/]+)+', '', content)
 				extensions = MySQLdb.escape_string(extensions) if extensions else ''
@@ -183,35 +209,34 @@ if __name__ == '__main__':
 				try:
 					if id is not None:
 						db.execute("UPDATE domains SET host = %s, ping_ms = %s, server = %s, cookies = %s, headers = %s, content = %s, code = %s, extensions = %s WHERE id = %s",
-						           [domain, str(duration), server, cks, hdrs, content, str(code), extensions, str(id)])
+						           [domain, str(duration), server, cks, hdrs, str(content), str(code), extensions, str(id)])
 					else:
 						db.execute("INSERT INTO domains (`host`, `ping_ms`, `server`, `cookies`, `headers`, `content`, `code`, `extensions`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-						           [domain, str(duration), server, cks, hdrs, content, str(code), extensions])
+						           [domain, str(duration), server, cks, hdrs, str(content), str(code), extensions])
 				except Exception as e:
-					print(f'\rexception sql: {e} [{db.statement}] {cnx.sql_mode}')
+					print(f'\r\nexception sql: {e} [{db.statement}] {cnx.sql_mode}')
 					flog(f'exception {e} domain:{domain}={db.statement}')
 					quit()
 
-				print(f"\r[{code}] [{domain}, id={id}]: len {len(content)}b, dur {duration}ms., redir {True if data.is_redirect else False} ")
+				print(f"\r[{code}] \"{domain}\" id {'new' if id is None else id}, len {len(content)}, dur {duration}ms {', redir' if data.is_redirect else ''}, "
+				                                         f"{len(data.cookies.items()) if len(data.cookies.items()) else 'no'} cookies ")
 
 				# connection is not autocommit by default. So you must commit to save
 				# your changes.
 				cnx.commit()
 
 			except Exception as e:
-				if hasattr(traceback, print_exc):
-					traceback.print_exc()
 				type, value, traceback = sys.exc_info()
-				print(f'-{value}|-{type}|-{traceback}|')
+				print(f'\r-{value}|-{type}|-{traceback}|')
 				msg = re.sub(r'([\'"])', '', str(value))
-				print(f'[ ! ] {domain}: exception: {msg} [{sys.exc_info()[2]}]')
+				print(f'\r[ ! ] {domain}: exception: {msg} [{sys.exc_info()[2]}]')
 				db.execute(f"INSERT IGNORE INTO `domains` SET `error` = '{msg}', host = '{domain}'")
 				# cursor = connection.cursor()
 				# cursor.execute(sql)
 				# cursor.close()
 				# connection.commit()
 				continue
-			time.sleep(random.randint(0, 2))
+			time.sleep(random.randint(0, 1))
 
-		print(f'ok, wait ...')
-		time.sleep(5)
+		print(f'\r\nok, wait ...')
+		time.sleep(random.randint(0, 4))
