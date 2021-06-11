@@ -149,7 +149,7 @@ if __name__ == '__main__':
 				# Create a new record
 				extensions = data.headers.get('x-powered-by')
 				cookies = data.cookies if data.cookies else ''
-				headers = "\n".join(data.headers.values())
+				# headers = "\n".join(data.headers.values())
 				server = data.headers.get('server')
 				code = data.status_code
 
@@ -161,8 +161,14 @@ if __name__ == '__main__':
 				id = exist.get('id') if exist else None
 				# print(f'exist: {id}')
 				server = sqlescape(server) if server else ''
-				cookies = ':'.join(cookies) if isinstance(cookies, requests.cookies.RequestsCookieJar) else cookies
-				headers = MySQLdb.escape_string(headers) if headers else ''
+				cks = []
+				for header, value in data.cookies.items():
+					cks.append(f'{header}: {value}')
+				cks = "\n".join(cks)
+				hdrs = []
+				for header, value in data.headers.items():
+					hdrs.append(f'{header}: {value}')
+				hdrs = "\n".join(hdrs)
 				# content = connection.escape_string(content) if content else ''
 				# content = "%s" % sqlescape(content)
 				content = MySQLdb.escape_string(content)
@@ -177,10 +183,10 @@ if __name__ == '__main__':
 				try:
 					if id is not None:
 						db.execute("UPDATE domains SET host = %s, ping_ms = %s, server = %s, cookies = %s, headers = %s, content = %s, code = %s, extensions = %s WHERE id = %s",
-						           [domain, str(duration), server, cookies, headers, content, str(code), extensions, str(id)])
+						           [domain, str(duration), server, cks, hdrs, content, str(code), extensions, str(id)])
 					else:
 						db.execute("INSERT INTO domains (`host`, `ping_ms`, `server`, `cookies`, `headers`, `content`, `code`, `extensions`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-						           [domain, str(duration), server, cookies, headers, content, str(code), extensions])
+						           [domain, str(duration), server, cks, hdrs, content, str(code), extensions])
 				except Exception as e:
 					print(f'\rexception sql: {e} [{db.statement}] {cnx.sql_mode}')
 					flog(f'exception {e} domain:{domain}={db.statement}')
@@ -193,7 +199,8 @@ if __name__ == '__main__':
 				cnx.commit()
 
 			except Exception as e:
-				traceback.print_exc()
+				if hasattr(traceback, print_exc):
+					traceback.print_exc()
 				type, value, traceback = sys.exc_info()
 				print(f'-{value}|-{type}|-{traceback}|')
 				msg = re.sub(r'([\'"])', '', str(value))
@@ -204,7 +211,7 @@ if __name__ == '__main__':
 				# cursor.close()
 				# connection.commit()
 				continue
-			time.sleep(random.randint(1, 5))
+			time.sleep(random.randint(0, 2))
 
 		print(f'ok, wait ...')
 		time.sleep(5)
