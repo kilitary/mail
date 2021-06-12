@@ -7,6 +7,8 @@ import sys
 import time
 from os import getenv
 from struct import *
+import json
+import itertools
 import platform
 import logging
 import binascii
@@ -19,6 +21,7 @@ from elasticsearch import Elasticsearch
 from var_dump import var_dump, var_export
 import secrets
 import random
+from requests.structures import CaseInsensitiveDict
 import re
 from re import RegexFlag
 import lzstring
@@ -40,6 +43,9 @@ import mysql.connector
 import requests.utils
 import requests.cookies
 
+HOST = 'edition.cnn.com'
+PORT = 443
+
 db_conf = {
 	'host'         : 'kilitary.ru',
 	'user'         : 'cnn',
@@ -49,7 +55,10 @@ db_conf = {
 	'max_pool_size': 20  # optional, default is 10
 }
 log_file = 'cnn.log'
-stable_domains = []
+stable_domains = {}
+domains = {}
+hosts = {}
+commited_origins = {}
 
 class Randomer(object):
 	def __init__(self):
@@ -80,159 +89,187 @@ class Randomer(object):
 			names = open('names.txt', 'r').read().lower().split("\n")
 		return secrets.choice(names)
 
-def flog(msg, fprint=False):
-	with open('cnn.log', 'at', errors='ignore') as file:
+def flog(msg, fprint=False, filen='cnn.log'):
+	with open(filen, 'at', errors='ignore') as file:
 		if fprint:
 			print(msg)
 		file.write(msg + '\r\n')
 
-def collect_domains(url):
-	global stable_domains
-	print(f'[ * ] refreshing via {url} ...', end='')
+def exception_handler(exctype, value, tb):
+	print(f'Exception:')
+	print('Type:', exctype)
+	print('Value:', value)
+	print('Traceback:', tb)
 
-	domains = {}
+	if tb:
+		format_exception = traceback.format_tb(tb)
+		for line in format_exception:
+			print(f'{repr(line)}')
+
+def collect_domains(url):
+	global stable_domains, domains, hosts
+
+	print(f'[ * ] refreshing via {url} ...')
+
 	try:
 		data = requests.get(f'https://{url}')
 		matches = re.findall(r"//(.*?\.[^ /\",:\?\$'=<>]*)", data.text, flags=re.RegexFlag.S | re.RegexFlag.M)
 		print(f'{len(data.text)} bytes, {len(matches)} domains ', end='')
 
 		for match in matches:
-			if domains.get(match) is None:
-				domains[match] = 1
+			if hosts.get(match) is None:
+				hosts[match] = 1
 				print(f' +{match} ')
 			else:
-				domains[match] += 1
+				hosts[match] += 1
 
 		def take_random(elem):
 			return random.randint(0, 1)
 
-		if len(domains):
-			stable_domains = domains
-
-		domains = sorted(domains, key=take_random)
-		return domains
+		domains = sorted(hosts, key=take_random)
 
 	except Exception as e:
 		print(f'\r[ ! ] [{url}] exception HTTP={e}')
-		# url = domains[random.randint(0, len(domains) - 1)]
-		# print(f'next safe domain: {url}')
 		return stable_domains
 
 if __name__ == '__main__':
+	sys.excepthook = exception_handler
 	print(f'connecting to db ...')
 	cnx = mysql.connector.connect(host='kilitary.ru', user='cnn', password='cnn', database='cnn', autocommit=True)  # , sql_mode="ANSI_QUOTES"
 	db = cnx.cursor(buffered=True, dictionary=True)
 	print(f'done {cnx.get_server_info()}')
-
-	HOST = 'edition.cnn.com'
-	PORT = 443
 
 	random.seed(os.getpid())
 
 	if os.path.exists(log_file):
 		os.unlink(log_file)
 
+	possible_equals = list(itertools.permutations([':', '=', '-', ' '], 2))
+	print(f'poss_equals={possible_equals}')
+	equals = []
+	for equal in possible_equals:
+		dest_str = ''
+		for sign in equal:
+			dest_str += sign
+		equals.append(dest_str)
+
+	print(f'equals={equals}')
+
 	url = 'edition.cnn.com'
-	domains = {}
 	while True:
-		domains = collect_domains(url)
+		collect_domains(url)
+
+		try:
+			url = domains[random.randint(0, len(domains) - 1)]
+		except Exception as e:
+			print(f'ahh, error domainsLen={len(domains)}')
+			continue
+
 		for domain in list(domains):
-			index = random.randint(0, len(domains) - 1)
-			if domains[index] is None:
+			domain = re.sub(r'([^\.0-9a-z"]*?)', '', domain, flags=RegexFlag.UNICODE | RegexFlag.I)
+
+			if len(domain) >= 30:
+				print(f'[ ! ] "{domain}" what??')
 				continue
 
-			id = None
-			domain = re.sub(r'([^\.0-9a-zA-Z]?)', '', domain, flags=RegexFlag.UNICODE)
-			print(f'\r[ ? ] "{domain}" connecting ...', end='')
-
-			# if 'cnn' not in domain:
-			# 	continue
+			print(f'\r[ ? ] "{domain}" connecting ... ', end='')
 
 			start = time.perf_counter_ns()
+			data = ''
 			try:
-				try:
-					data = requests.get(f'https://{domain}/', timeout=10)
-				except requests.exceptions.SSLError as e:
-					print(f'\r[ % ] "{domain}" ssl fail')
-					continue
-				except requests.exceptions.InvalidURL as e:
-					print(f'"{domain}" is missparsed')
-					continue
-				except requests.exceptions.ConnectionError as e:
-					print(f'"\r[ @ ] "{domain}" - dns fail')
-					continue
-				except Exception as e:
-					type, value, traceback = sys.exc_info()
-					print(f'\n\r[ ! ] "{domain}" exception {type} HTTP={e}\r\ntrace={traceback}')
-					sys.excepthook(sys.exc_info())
-					continue
-				# content = bytes(data.text).decode('utf8', errors="ignore")
-				duration = (time.perf_counter_ns() - start) / 1000000
-
-				# with connection:
-				# cursor = connection.cursor()
-				# Create a new record
-				extensions = data.headers.get('x-powered-by')
-				cookies = data.cookies if data.cookies else ''
-				# headers = "\n".join(data.headers.values())
-				server = data.headers.get('server')
-				code = data.status_code
-
-				# cur = connection.cursor()
-				# cur.execute(f"SELECT id FROM domains WHERE host='{domain}'")
-				db.execute('SELECT id FROM domains WHERE host = %s', [domain])
-				exist = db.fetchone()
-
-				id = exist.get('id') if exist else None
-				# print(f'exist: {id}')
-				server = sqlescape(server) if server else ''
-				cks = []
-				for header, value in data.cookies.items():
-					cks.append(f'{header}: {value}')
-				cks = "\n".join(cks)
-				hdrs = []
-				for header, value in data.headers.items():
-					hdrs.append(f'{header}: {value}')
-				hdrs = "\n".join(hdrs)
-				# content = connection.escape_string(content) if content else ''
-				# content = "%s" % sqlescape(content)
-				content = MySQLdb.escape_string(data.text.encode('utf-8'))
-				content = re.sub(r'([^\x21-\x7e])', '?', str(content))
-				# content = sqlescape(content)
-				# content = re.sub(r'([^a-z0-9 \[\]~!@#\$%\^&\*\(\)<>\'"\/]+)+', '', content)
-				extensions = MySQLdb.escape_string(extensions) if extensions else ''
-
-				# print(f'domain: [{domain}, id={id}]')
-
-				# print(f'sql: [{sql}]')
-				sql = ''
-				try:
-					if id is not None:
-						db.execute("UPDATE domains SET host = %s, ping_ms = %s, server = %s, cookies = %s, headers = %s, content = %s, code = %s, extensions = %s WHERE id = %s",
-						           [domain, str(duration), server, cks, hdrs, str(content), str(code), extensions, str(id)])
-					else:
-						db.execute("INSERT INTO domains (`host`, `ping_ms`, `server`, `cookies`, `headers`, `content`, `code`, `extensions`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-						           [domain, str(duration), server, cks, hdrs, str(content), str(code), extensions])
-				except Exception as e:
-					print(f'\r\nexception sql: {e} [{db.statement}] {cnx.sql_mode}')
-					flog(f'exception {e} domain:{domain}={db.statement}')
-					quit()
-
-				print(f"\r[{code}] \"{domain}\" id {'new' if id is None else id}, len {len(content)}, dur {duration:.2f}ms {', redir' if data.is_redirect else ''}, "
-				      f"{len(data.cookies.items()) if len(data.cookies.items()) else 'no'} cookies ")
-
-				cnx.commit()
-
-			except Exception as e:
-				type, value, traceback = sys.exc_info()
-				print(f'\r-{value}|-{type}|-{traceback}|')
-				msg = re.sub(r'([\'"])', '', str(value))
-				print(f'\r[ ! ] {domain}: exception: {msg} [{sys.exc_info()[2]}]\r\ntrace={traceback}')
-				# if traceback is not None:
-				# 	sys.excepthook()
-				db.execute(f"INSERT IGNORE INTO `domains` SET `error` = '{msg}', host = '{domain}'")
+				data = requests.get(f'https://{domain}/', timeout=10)
+			except requests.exceptions.SSLError as e:
+				print(f'\r[ % ] "{domain}" - ssl fail')
 				continue
+			except (ValueError, TypeError) as e:
+				print(f'\r[ ! ] "{domain}" - missparsed')
+				continue
+			except requests.exceptions.ConnectionError as e:
+				print(f'\r[ @ ] "{domain}" - dns fail')
+				continue
+			except requests.exceptions.ReadTimeout as e:
+				print(f'\r[ ! ] "{domain}" - timeout')
+
+			duration = (time.perf_counter_ns() - start) / 1000000
+
+			extensions = data.headers.get('x-powered-by') if isinstance(data.headers, CaseInsensitiveDict) else ''
+
+			cookies = data.cookies if data.cookies else ''
+
+			server = data.headers.get('server')
+			code = data.status_code
+
+			db.execute('SELECT id FROM domains WHERE host = %s', [domain])
+			exist = db.fetchone()
+
+			id = exist.get('id') if exist else None
+			server = sqlescape(server) if server else ''
+			cks_log = []
+			for header_in, value_in in data.cookies.items():
+				cks_log.append(f'{header_in}: {value_in}')
+				commited_origins[header_in] = value_in
+
+			cks_log = "\n".join(cks_log)
+			hdrs = []
+			for header, value in data.headers.items():
+				hdrs.append(f'{header}: {value}')
+			hdrs = "\n".join(hdrs)
+			content = MySQLdb.escape_string(data.text.encode('utf-8'))
+			content = re.sub(r'([^\x21-\x7e])', '?', str(content))
+			extensions = MySQLdb.escape_string(extensions) if extensions else ''
+
+			sql = ''
+			if id is not None:
+				db.execute("UPDATE domains SET host = %s, ping_ms = %s, server = %s, cookies = %s, headers = %s, content = %s, code = %s, extensions = %s WHERE id = %s",
+				           [domain, str(duration), server, cks_log, hdrs, str(content), str(code), extensions, str(id)])
+			else:
+				db.execute("INSERT INTO domains (`host`, `ping_ms`, `server`, `cookies`, `headers`, `content`, `code`, `extensions`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+				           [domain, str(duration), server, cks_log, hdrs, str(content), str(code), extensions])
+
+			for header_in, value_in in data.cookies.items():
+				# test stage
+				if len(commited_origins):
+					for header, value in commited_origins.items():
+						if value == value_in and header_in != header and len(value) > 1:
+							print(f'\r\n[-->] "{domain}" link: [{header}/{header_in}]:{value}', end='')
+							flog(f'{domain}: [{header}/{header_in}]:{value}', filen='links.log')
+
+			print(f"\r[{code}] \"{domain}\" id {'new' if id is None else id}, len {len(content)}, dur {duration:.2f}ms {', redir' if data.is_redirect else ''}, "
+			      f"{len(data.cookies.items()) if len(data.cookies.items()) else 'no'} cookies ")
+
+			skip_headers = ['Date', 'Expires', 'Last-Modified']
+			for header, header_value in data.headers.items():
+				if header in skip_headers:
+					continue
+				print(f'[ > ] {header}: {header_value}')
+				header_value = header_value.replace('"', '').replace("'", '')
+				root_matches = re.findall(r"(.*)[\s+;:]*?(.*?)", header_value, flags=re.RegexFlag.S | re.RegexFlag.U)
+				if len(root_matches) > 0:
+					root_matches.pop()
+					for root_match in root_matches:
+						commited_origins[root_match[0]] = root_match[1]
+
+						root_m = root_match[0]
+						for equal in equals:
+							root_m = root_m.replace(equal, '=')
+						print(f'[ V ] [{root_m}] => {root_match[0]} -> {root_match[1]}')
+						level_2_matches = re.findall(r"([^=\s]*?)[=]([^\s]*?)", root_m, flags=re.RegexFlag.S | re.RegexFlag.U)
+						if len(level_2_matches) > 0:
+							# level_2_matches.pop()
+							for level_2_match in level_2_matches:
+								commited_origins[level_2_match[0]] = level_2_match[1]
+								print(f'[ 2 ] [{level_2_match[0]}] => {level_2_match[0]} -> {level_2_match[1]}')
+
+			cnx.commit()
 			time.sleep(random.randint(0, 1))
 
-		print(f'\r\nok, wait ...')
-		time.sleep(random.randint(0, 4))
+			with open('origins.json', 'a') as f:
+				y = json.dumps(commited_origins, sort_keys=False, indent=2)
+				f.write(y)
+
+		secs = random.randint(1, 4)
+		for header, value in commited_origins.items():
+			print(f'[ i ] {header}: {value}')
+
+		print(f'\r\n[ * ] ok, wait {secs} sec(s) ...')
+		time.sleep(secs)
