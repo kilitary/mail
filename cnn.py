@@ -144,8 +144,7 @@ if __name__ == '__main__':
 	if os.path.exists(log_file):
 		os.unlink(log_file)
 
-	possible_equals = list(itertools.permutations([':', '=', '-', ' '], 2))
-	print(f'poss_equals={possible_equals}')
+	possible_equals = list(itertools.permutations([':', '=', '-', ' ', '/', '~', '|'], 2))
 	equals = []
 	for equal in possible_equals:
 		dest_str = ''
@@ -196,7 +195,7 @@ if __name__ == '__main__':
 
 			cookies = data.cookies if hasattr(data, 'cookies') else ''
 
-			server = data.headers.get('server') if (isinstance(data.headers, CaseInsensitiveDict) and hasattr(data, 'headers')) else data.headers
+			server = data.headers.get('server') if (hasattr(data, 'headers') and isinstance(data.headers, CaseInsensitiveDict)) else data.headers
 			code = data.status_code
 
 			db.execute('SELECT id FROM domains WHERE host = %s', [domain])
@@ -268,10 +267,10 @@ if __name__ == '__main__':
 							# level_2_matches.pop()
 							for level_2_match in level_2_matches:
 								commited_origins[level_2_match[0]] = {'domain': domain, 'parent': level_2_match[1], 'root': root_m, 'utf8decoded': decoded}
-								commited_origins[level_2_match[1]] = level_2_match[0]
+								commited_origins[level_2_match[1]] = {'domain': domain, 'parent': level_2_match[0], 'root': root_m, 'utf8decoded': decoded}
 								print(f'[L 2] [{level_2_match[0]}] => {level_2_match[0]} -> {level_2_match[1]}')
 
-			cnx.commit()
+			#cnx.commit()
 			time.sleep(random.randint(0, 1))
 
 			with open('origins.json', 'a') as f:
