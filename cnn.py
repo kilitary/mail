@@ -192,11 +192,11 @@ if __name__ == '__main__':
 
 			duration = (time.perf_counter_ns() - start) / 1000000
 
-			extensions = data.headers.get('x-powered-by') if isinstance(data.headers, CaseInsensitiveDict) else ''
+			extensions = data.headers.get('x-powered-by') if hasattr(data, 'headers') else ''
 
-			cookies = data.cookies if data.cookies else ''
+			cookies = data.cookies if hasattr(data, 'cookies') else ''
 
-			server = data.headers.get('server')
+			server = data.headers.get('server') if (isinstance(data.headers, CaseInsensitiveDict) and hasattr(data, 'headers')) else data.headers
 			code = data.status_code
 
 			db.execute('SELECT id FROM domains WHERE host = %s', [domain])
@@ -247,18 +247,29 @@ if __name__ == '__main__':
 				if len(root_matches) > 0:
 					root_matches.pop()
 					for root_match in root_matches:
-						commited_origins[root_match[0]] = root_match[1]
+						# commited_origins[root_match[0]] = root_match[1]
 
 						root_m = root_match[0]
+
+						try:
+							if '==' in root_m:
+								decoded = base64.decodebytes(root_m).decode('utf-8', errors='ignore')
+							else:
+								decoded = '#notapplicable#'
+						except TypeError as e:
+							print(f'[ ! ] "{domain}" => {root_m} decode utf-8 fail => {e}')
+							continue
+
 						for equal in equals:
 							root_m = root_m.replace(equal, '=')
-						print(f'[ V ] [{root_m}] => {root_match[0]} -> {root_match[1]}')
-						level_2_matches = re.findall(r"([^=\s]*?)[=]([^\s]*?)", root_m, flags=re.RegexFlag.S | re.RegexFlag.U)
+						print(f'[L 1] [{root_m}] => {root_match[0]} -> {root_match[1]}')
+						level_2_matches = re.findall(r"([^=,\s\*]+?)[=:]([^\s\*,=]*)", root_m, flags=re.RegexFlag.S | re.RegexFlag.U)
 						if len(level_2_matches) > 0:
 							# level_2_matches.pop()
 							for level_2_match in level_2_matches:
-								commited_origins[level_2_match[0]] = level_2_match[1]
-								print(f'[ 2 ] [{level_2_match[0]}] => {level_2_match[0]} -> {level_2_match[1]}')
+								commited_origins[level_2_match[0]] = {'domain': domain, 'parent': level_2_match[1], 'root': root_m, 'utf8decoded': decoded}
+								commited_origins[level_2_match[1]] = level_2_match[0]
+								print(f'[L 2] [{level_2_match[0]}] => {level_2_match[0]} -> {level_2_match[1]}')
 
 			cnx.commit()
 			time.sleep(random.randint(0, 1))
