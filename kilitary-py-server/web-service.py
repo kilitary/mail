@@ -6,23 +6,6 @@ import json
 import websockets
 import logging
 
-async def process_message(websocket, path):
-	print(f'connected')
-	message = ''
-	try:
-		message = await websocket.recv()
-	except Exception as e:
-		print(f'exception: {e}')
-
-	print(f'process_message ... {path} {type(message)}')
-	message = json.dumps({'test1': 1, 'test2': 2})
-	print(f"< {message}")
-	try:
-		await websocket.send(message)
-	except Exception as e:
-		print(f'exception: {e}')
-	print(f"> {json.loads(message)}")
-
 async def onConnection(websocket, path):
 	print(f'connected {websocket.remote_address}')
 	message = ''
@@ -31,6 +14,7 @@ async def onConnection(websocket, path):
 	except Exception as e:
 		print(f'exception: {e}')
 
+	print(f"> {json.loads(message)}")
 	print(f'process_message ... {path} {type(message)}')
 	message = json.dumps({'test1': 1, 'test2': 2})
 	print(f"< {message}")
@@ -38,7 +22,6 @@ async def onConnection(websocket, path):
 		await websocket.send(message)
 	except Exception as e:
 		print(f'exception: {e}')
-	print(f"> {json.loads(message)}")
 
 logger = logging.getLogger("websockets.server")
 logger.setLevel(logging.DEBUG)

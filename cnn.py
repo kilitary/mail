@@ -87,7 +87,7 @@ def collect_domains(url):
 		return stable_domains
 
 if __name__ == '__main__':
-	sys.excepthook = exception_handler
+	#sys.excepthook = exception_handler
 	print(f'connecting to db ...')
 	cnx = mysql.connector.connect(host='kilitary.ru', user='cnn', password='cnn', database='cnn', autocommit=True)  # , sql_mode="ANSI_QUOTES"
 	db = cnx.cursor(buffered=True, dictionary=True)
