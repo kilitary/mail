@@ -11,7 +11,7 @@ async def processConnection(websocket, path):
 	try:
 		message = await websocket.recv()
 	except Exception as e:
-		print(f'exception: {e}')
+		print(f'exception1: {e}')
 
 	print(f"> {json.loads(message)}")
 	print(f'process_message ... {path} {type(message)}')
@@ -20,7 +20,7 @@ async def processConnection(websocket, path):
 	try:
 		await websocket.send(message)
 	except Exception as e:
-		print(f'exception: {e}')
+		print(f'exception2: {e}')
 
 	try:
 		message = await websocket.recv()
@@ -32,7 +32,7 @@ async def processConnection(websocket, path):
 	try:
 		await websocket.send(message)
 	except Exception as e:
-		print(f'exception: {e}')
+		print(f'exception3: {e}')
 
 logger = logging.getLogger("websockets.server")
 logger.setLevel(logging.DEBUG)
