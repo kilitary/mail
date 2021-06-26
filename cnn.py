@@ -46,6 +46,12 @@ import requests.cookies
 HOST = 'edition.cnn.com'
 PORT = 443
 
+bans = ['wikip']
+
+def flog(msg, filen='log.txt'):
+	with open(filen, 'at', errors='ignore') as file:
+		file.write(msg + '\r\n')
+
 db_conf = {
 	'host'         : 'kilitary.ru',
 	'user'         : 'cnn',
@@ -70,8 +76,16 @@ def collect_domains(url):
 		matches = re.findall(r"//(.*?\.[^ /\",:\?\$'=<>]*)", data.text, flags=re.RegexFlag.S | re.RegexFlag.M)
 		print(f'{len(data.text)} bytes, {len(matches)} domains ', end='')
 
+		skip = False
 		for match in matches:
 			if hosts.get(match) is None:
+				for ban in bans:
+					if ban in match:
+						print(f'fuck {match}')
+						skip = True
+						break
+				if skip:
+					break
 				hosts[match] = 1
 				print(f' +{match} ')
 			else:
@@ -87,7 +101,7 @@ def collect_domains(url):
 		return stable_domains
 
 if __name__ == '__main__':
-	#sys.excepthook = exception_handler
+	# sys.excepthook = exception_handler
 	print(f'connecting to db ...')
 	cnx = mysql.connector.connect(host='kilitary.ru', user='cnn', password='cnn', database='cnn', autocommit=True)  # , sql_mode="ANSI_QUOTES"
 	db = cnx.cursor(buffered=True, dictionary=True)
@@ -149,8 +163,8 @@ if __name__ == '__main__':
 
 			cookies = data.cookies if hasattr(data, 'cookies') else ''
 
-			server = data.headers.get('server') if (hasattr(data, 'headers') and isinstance(data.headers, CaseInsensitiveDict)) else data.headers
-			code = data.status_code
+			server = data.headers.get('server') if (hasattr(data, 'headers') and isinstance(data.headers, CaseInsensitiveDict)) else '#empty#'
+			code = data.status_code if hasattr(data, 'status_code') else -1
 
 			db.execute('SELECT id FROM domains WHERE host = %s', [domain])
 			exist = db.fetchone()
@@ -206,7 +220,7 @@ if __name__ == '__main__':
 
 						try:
 							if '==' in root_m:
-								decoded = base64.decodebytes(root_m).decode('utf-8', errors='ignore')
+								decoded = base64.decodebytes(root_m).decode('utf-8', errors='ignore') if isinstance(base64.decodebytes(root_m), bytes) else '#notdecodable'
 							else:
 								decoded = '#notapplicable#'
 						except TypeError as e:
@@ -225,7 +239,7 @@ if __name__ == '__main__':
 								print(f'[L 2] [{level_2_match[0]}] => {level_2_match[0]} -> {level_2_match[1]}')
 
 			# cnx.commit()
-			time.sleep(random.randint(0, 1))
+			# time.sleep(random.randint(0, 1))
 
 			with open('origins.json', 'wt') as f:
 				y = json.dumps(commited_origins, sort_keys=False, indent=2)
@@ -236,4 +250,4 @@ if __name__ == '__main__':
 			print(f'[ i ] {header}: {value}')
 
 		print(f'\r\n[ * ] ok, wait {secs} sec(s) ...')
-		time.sleep(secs)
+# time.sleep(secs)
