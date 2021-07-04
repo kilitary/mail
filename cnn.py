@@ -46,7 +46,7 @@ import requests.cookies
 HOST = 'edition.cnn.com'
 PORT = 443
 
-bans = ['wikip']
+bans = ['wikip', 'wordp', 'apac', 'tripa', 'messe', 'uefa', 'linkedi', 'adobe', 'mozil', 'pint']
 
 def flog(msg, filen='log.txt'):
 	with open(filen, 'at', errors='ignore') as file:
@@ -66,6 +66,13 @@ domains = {}
 hosts = {}
 commited_origins = {}
 
+def is_banned(match):
+	for ban in bans:
+		if ban in match:
+			print(f'fuck {match}')
+			return True
+	return False
+
 def collect_domains(url):
 	global stable_domains, domains, hosts
 
@@ -75,17 +82,15 @@ def collect_domains(url):
 		data = requests.get(f'https://{url}')
 		matches = re.findall(r"//(.*?\.[^ /\",:\?\$'=<>]*)", data.text, flags=re.RegexFlag.S | re.RegexFlag.M)
 		print(f'{len(data.text)} bytes, {len(matches)} domains ', end='')
+		print(f'{matches}')
 
 		skip = False
 		for match in matches:
 			if hosts.get(match) is None:
-				for ban in bans:
-					if ban in match:
-						print(f'fuck {match}')
-						skip = True
-						break
-				if skip:
-					break
+				if is_banned(match):
+					print(f'fuck {match}')
+					continue
+
 				hosts[match] = 1
 				print(f' +{match} ')
 			else:
@@ -144,7 +149,7 @@ if __name__ == '__main__':
 			start = time.perf_counter_ns()
 			data = ''
 			try:
-				data = requests.get(f'https://{domain}/', timeout=10)
+				data = requests.get(f'https://{domain}', timeout=10)
 			except requests.exceptions.SSLError as e:
 				print(f'\r[ % ] "{domain}" - ssl fail')
 				continue
@@ -156,6 +161,10 @@ if __name__ == '__main__':
 				continue
 			except requests.exceptions.ReadTimeout as e:
 				print(f'\r[ ! ] "{domain}" - timeout')
+				continue
+			except Exception as e:
+				print(f'std exp: {e}')
+				continue
 
 			duration = (time.perf_counter_ns() - start) / 1000000
 
@@ -172,16 +181,17 @@ if __name__ == '__main__':
 			id = exist.get('id') if exist else None
 			server = sqlescape(server) if server else ''
 			cks_log = []
-			for header_in, value_in in data.cookies.items():
+			for header_in, value_in in (data.cookies.items() if hasattr(data, "cookies") else {}):
 				cks_log.append(f'{header_in}: {value_in}')
 				commited_origins[header_in] = value_in
 
 			cks_log = "\n".join(cks_log)
 			hdrs = []
-			for header, value in data.headers.items():
+			items = data.headers.items() if (hasattr(data, 'headers') and hasattr(data.headers, 'items')) else []
+			for header, value in items:
 				hdrs.append(f'{header}: {value}')
 			hdrs = "\n".join(hdrs)
-			content = MySQLdb.escape_string(data.text.encode('utf-8'))
+			content = MySQLdb.escape_string(data.text.encode('utf-8')) if hasattr(data, 'text') else ''
 			content = re.sub(r'([^\x21-\x7e])', '?', str(content))
 			extensions = MySQLdb.escape_string(extensions) if extensions else ''
 
@@ -193,7 +203,8 @@ if __name__ == '__main__':
 				db.execute("INSERT INTO domains (`host`, `ping_ms`, `server`, `cookies`, `headers`, `content`, `code`, `extensions`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
 				           [domain, str(duration), server, cks_log, hdrs, str(content), str(code), extensions])
 
-			for header_in, value_in in data.cookies.items():
+			items = data.cookies.items() if hasattr(data, 'cookies') else []
+			for header_in, value_in in items:
 				# test stage
 				if len(commited_origins):
 					for header, value in commited_origins.items():
@@ -201,11 +212,12 @@ if __name__ == '__main__':
 							print(f'\r\n[-->] "{domain}" link: [{header}/{header_in}]:{value}', end='')
 							flog(f'{domain}: [{header}/{header_in}]:{value}', filen='links.log')
 
-			print(f"\r[{code}] \"{domain}\" id {'new' if id is None else id}, len {len(content)}, dur {duration:.2f}ms {', redir' if data.is_redirect else ''}, "
-			      f"{len(data.cookies.items()) if len(data.cookies.items()) else 'no'} cookies ")
+			print(f"\r[{code}] \"{domain}\" id {'new' if id is None else id}, len {len(content)}, dur {duration:.2f}ms {', redir' if (data.is_redirect if hasattr(data, 'is_redirect') else False) else ''}, "
+			      f"{len(data.cookies.items()) if hasattr(data, 'cookies') else 'no'} cookies ")
 
 			skip_headers = ['Date', 'Expires', 'Last-Modified']
-			for header, header_value in data.headers.items():
+			items = data.headers.items() if hasattr(data, 'headers') else []
+			for header, header_value in items:
 				if header in skip_headers:
 					continue
 				print(f'[ > ] {header}: {header_value}')
@@ -242,7 +254,7 @@ if __name__ == '__main__':
 			# time.sleep(random.randint(0, 1))
 
 			with open('origins.json', 'wt') as f:
-				y = json.dumps(commited_origins, sort_keys=False, indent=2)
+				y = json.dumps(commited_origins, indent=2)
 				f.write(y)
 
 		secs = random.randint(1, 4)

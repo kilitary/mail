@@ -1,40 +1,32 @@
 #!/usr/bin/env python
-
 import asyncio
 import json
+import random
+
 import websockets
 import logging
+import time
+import os
 
-
+message = ''
 
 async def processConnection(websocket, path):
 	print(f'connected {websocket.remote_address}:{websocket.local_address}')
-	message = ''
-	try:
-		message = await websocket.recv()
-	except Exception as e:
-		print(f'exception1: {e}')
 
-	print(f"> {json.loads(message)}")
-	print(f'process_message ... {path} {type(message)}')
-	message = json.dumps({'fail': False, 'data': 200})
-	print(f"< {message}")
-	try:
-		await websocket.send(message)
-	except Exception as e:
-		print(f'exception2: {e}')
-
-	try:
-		message = await websocket.recv()
-	except Exception as e:
-		print(f'exception: {e}')
-	print(f"> {json.loads(message)}")
-
-	message = json.dumps({'error': False, 'id': 117})
-	try:
-		await websocket.send(message)
-	except Exception as e:
-		print(f'exception3: {e}')
+	while True:
+		try:
+			print(f'reading {websocket.remote_address} ...')
+			message = await websocket.recv()
+			print(f"> {json.loads(message)}")
+			id = random.randint(0, os.getpid())
+			message = json.dumps({'error': False, 'pid': os.getpid(), 'sendlen': len(message), 'id': id})
+			await websocket.send(message)
+			print(f"< {json.loads(message)}")
+		except Exception as e:
+			print(f'exception1: {e}')
+			return
+		#print(f'sleeping ...')
+		#time.sleep(1)
 
 logger = logging.getLogger("websockets.server")
 logger.setLevel(logging.DEBUG)
