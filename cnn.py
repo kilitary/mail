@@ -108,7 +108,7 @@ def collect_domains(url):
 if __name__ == '__main__':
 	# sys.excepthook = exception_handler
 	print(f'connecting to db ...')
-	cnx = mysql.connector.connect(host='kilitary.ru', user='cnn', password='cnn', database='cnn', autocommit=True)  # , sql_mode="ANSI_QUOTES"
+	cnx = mysql.connector.connect(host='kilitary.ru', user='cnn', password='kilitaryiskilitary', database='cnn', autocommit=True)  # , sql_mode="ANSI_QUOTES"
 	db = cnx.cursor(buffered=True, dictionary=True)
 	print(f'done {cnx.get_server_info()}')
 
@@ -144,12 +144,14 @@ if __name__ == '__main__':
 				print(f'[ ! ] "{domain}" what??')
 				continue
 
-			print(f'\r[ ? ] "{domain}" connecting ... ', end='')
-
 			start = time.perf_counter_ns()
 			data = ''
+			url = f'https://{domain}'
+
+			print(f'\r[ ? ] "{url}" connecting ... ', end='')
+
 			try:
-				data = requests.get(f'https://{domain}', timeout=10)
+				data = requests.get(url, timeout=10)
 			except requests.exceptions.SSLError as e:
 				print(f'\r[ % ] "{domain}" - ssl fail')
 				continue
@@ -179,6 +181,9 @@ if __name__ == '__main__':
 			exist = db.fetchone()
 
 			id = exist.get('id') if exist else None
+
+			db.execute("UPDATE domains SET processing = 1 WHERE host = %s", [domain]) if exist else None
+
 			server = sqlescape(server) if server else ''
 			cks_log = []
 			for header_in, value_in in (data.cookies.items() if hasattr(data, "cookies") else {}):
@@ -200,8 +205,11 @@ if __name__ == '__main__':
 				db.execute("UPDATE domains SET host = %s, ping_ms = %s, server = %s, cookies = %s, headers = %s, content = %s, code = %s, extensions = %s WHERE id = %s",
 				           [domain, str(duration), server, cks_log, hdrs, str(content), str(code), extensions, str(id)])
 			else:
-				db.execute("INSERT INTO domains (`host`, `ping_ms`, `server`, `cookies`, `headers`, `content`, `code`, `extensions`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-				           [domain, str(duration), server, cks_log, hdrs, str(content), str(code), extensions])
+				packed_host = base64.encodebytes(bytes(hdrs, 'utf-8'))
+				db.execute("INSERT INTO domains (`host`, `ping_ms`, `server`, `cookies`, `headers`, `content`, `code`, `extensions`, `malformed`) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+				           [domain, str(duration), server, cks_log, hdrs, str(content), str(code), extensions, packed_host])
+
+			db.execute("UPDATE domains SET processing = 0 WHERE host = %s", [domain])
 
 			items = data.cookies.items() if hasattr(data, 'cookies') else []
 			for header_in, value_in in items:
@@ -253,9 +261,9 @@ if __name__ == '__main__':
 			# cnx.commit()
 			# time.sleep(random.randint(0, 1))
 
-			with open('origins.json', 'wt') as f:
-				y = json.dumps(commited_origins, indent=2)
-				f.write(y)
+			# with open('origins.json', 'wt') as f:
+			# 	y = json.dumps(commited_origins, indent=2)
+			# 	f.write(y)
 
 		secs = random.randint(1, 4)
 		for header, value in commited_origins.items():
